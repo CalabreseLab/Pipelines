@@ -77,4 +77,10 @@ do
     # Move back to the main directory
     cd ..
     cd ..
+
+    if mv "$my_dir/SRR${i}/Kallisto_alignments/abundance.tsv" "$my_dir/SRR${i}/Kallisto_alignments/SRR${i}_abundance.tsv"; then
+        echo "File SRR${i}_abundance.tsv is ready to be copied."
+    else
+        echo "Failed to move abundance.tsv for SRR${i}"
+    fi
 done
