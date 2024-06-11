@@ -1,5 +1,10 @@
 #!/bin/bash
-for ((i=3085997; i<=3086005; i++)); do
-  echo "Processing SRR${i}"  # Debugging output
-  scp wxueyao@longleaf.unc.edu:/users/w/x/wxueyao/Calabrese_Lab/Alignments/SRR${i}/Kallisto_alignments/SRR${i}_abundance.tsv /Users/sherrywang/Desktop/Research/Calabrese/RNAseq_data/
+
+# Replace the <start number> and <end number>
+acc= <your longleaf account>
+longleaf_dir= <your longleaf directory for abundance.tsv data>
+local_dir= <your local directory for downloading>
+
+for i in $(seq <start number> <end number>); do
+  scp $acc: $longleaf_dir/SRR${i}/Kallisto_alignments/SRR${i}_abundance.tsv $local_dir
 done
