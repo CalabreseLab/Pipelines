@@ -1,4 +1,5 @@
 # STAR-and-Kallisto-pipelines
 
-# Open the Kallisto_Auto file and change the variables as indicated
-# 
+## 1. Automated alignments
+Open the Kallisto_Auto file and change the variables as indicated
+
