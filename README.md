@@ -8,11 +8,13 @@ This pipeline utilized STAR and Kallisto alignment on UNC longleaf. For samples 
 
 ### 2. Automated downloading of the data 
 1) First, set up an SSH key-based authentication to avoid entering passwords every time. Copy the code to your local terminal.
+
           ssh-keygen -t rsa
         # When asked about passphrase, press enter so that there will be no passphrase and the procedure can be completed automatically.
         # Enter your passcode for longleaf.
           ssh-copy-id <your longleaf account>
-2) Then submit the file DownloadFiles.sh to your local terminal.
+
+3) Then submit the file DownloadFiles.sh to your local terminal.
       
 ### 3. Merge the tables with R studio by target_id. Retaining only target_id and tpm column.
 1) Download and run Merge.Rmd file in R studio. 
