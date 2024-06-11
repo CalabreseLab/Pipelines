@@ -1,0 +1,41 @@
+---
+title: "Merge"
+author: "Sherry"
+date: "2024-06-04"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+```
+
+
+```{r}
+# List all file paths
+# Chang the path to your own directory
+file_paths <- list.files(path = "/Users/sherrywang/Desktop/Research/Calabrese/RNAseq_data", pattern = "*_abundance.tsv", full.names = TRUE)
+
+# Extract the target_id from the first file
+target_id <- read.delim(file_paths[1])[,1]
+data_list <- data.frame(target_id) %>% mutate(target_id = as.character(target_id))
+
+for (i in 1:length(file_paths)) {  
+  # Extract dataset name from file path
+  dataset_name <- tools::file_path_sans_ext(basename(file_paths[i]))
+  new_name <- paste(substr(dataset_name, 1, 10), "tpm", sep = "_") # substr uses 1-based indexing in R
+  
+  # Read the new data and rename the 5th column
+  new_data <- read.delim(file_paths[i]) %>%  
+    rename_with(~ new_name, tpm) %>% 
+    mutate(target_id = as.character(target_id)) %>% 
+    select(1, 5) 
+  #  rename_with(~ new_name, 2)  # Here, `2` refers to the second selected column
+  
+  # Merge with data_list
+  data_list <- full_join(data_list, new_data, by = "target_id")
+}
+
+# Download the merged table
+write.table(data_list, "/Users/sherrywang/Desktop/Research/Calabrese/RNAseq_data/combined_data.csv", sep = "\t", row.names = F, quote = F)
+```
