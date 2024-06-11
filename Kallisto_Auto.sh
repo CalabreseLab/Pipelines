@@ -4,8 +4,9 @@ It performs the following steps:
 1. Loads necessary modules.
 2. Creates a main directory for each SRR number.
 3. Inside each main directory, creates subdirectories for alignments and reports.
-4. Submits SLURM jobs to download fastq files, run STAR alignment, and process BAM files.
+4. Submits SLURM jobs to download fastq files, run STAR alignment and Kallisto alignment, and process BAM files.
 5. Logs output and error messages in the reports directory.
+6. Rename the abundance.tsv file to <SRR number>_abundance.tsv file.
 EOF
 
 #!/bin/bash
