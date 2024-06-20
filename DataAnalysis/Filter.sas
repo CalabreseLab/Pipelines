@@ -40,11 +40,6 @@ data data.Analysis;
     drop sum count i;
 run;
 
-data data.cl_ana;
-	set data.Analysis;
-	where mean ne 0;
-run;
-
 
 
 
