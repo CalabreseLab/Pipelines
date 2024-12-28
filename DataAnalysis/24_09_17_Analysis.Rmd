@@ -1,0 +1,257 @@
+---
+title: "Analysis"
+author: "Sherry"
+date: "2024-09-17"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(DESeq2)
+library(ggplot2)
+library(dplyr)
+library(EnhancedVolcano)
+library(randomForest)
+library(tidyr)
+```
+
+## Import dataset
+
+```{r}
+grp <- read.delim("/Users/sherrywang/Desktop/Research/Calabrese/RNAseq_data/Infiled/24_06_27_grp_mean.tsv", header = T)
+grp$Ensembl_Gene_ID <- sub("\\..*", "", grp$Ensembl_Gene_ID)
+
+head(grp, 50)
+```
+
+## Splicing efficiency
+
+
+```{r se}
+# Reshape the data to calculate splicing efficiency for each tissue
+spl_eff <- grp %>%
+  group_by(Ensembl_Gene_ID) %>%
+  summarise(across(starts_with("mean"), 
+                   ~ sprintf("%.6f", 
+                             sum(. * (Splicing == "Spliced")) / 
+                             (sum(. * (Splicing == "Spliced")) + 
+                              sum(. * (Splicing == "Unspliced")))),
+                   .names = "spl_eff_{col}"))
+
+# View the splicing efficiency for each tissue
+print(spl_eff)
+
+# write.table(spl_eff, "/Users/sherrywang/Desktop/Research/Calabrese/RNAseq_data/Splicing_Efficiency_07_01.tsv", sep = "\t", row.names = F)
+```
+
+```{r}
+ID_Biotype <- grp %>% 
+  select(Ensembl_Gene_ID, Biotype)
+
+ID_Biotype
+
+diff_type <- grp %>% 
+  group_by(Ensembl_Gene_ID) %>%
+  filter(n_distinct(Biotype) > 1) %>%
+  ungroup()
+
+diff_type
+
+eff_biotype <- left_join(ID_Biotype, spl_eff, by="Ensembl_Gene_ID")
+
+eff_biotype <- eff_biotype %>%
+  group_by(Ensembl_Gene_ID) %>%
+  mutate(Biotype_New = case_when(
+    any(Biotype == "protein_coding") ~ "protein_coding",
+    any(Biotype == "lncRNA") ~ "lncRNA",
+    TRUE ~ "other"
+  )) %>%
+  select(-Biotype) %>%
+  ungroup()
+
+uniq_eff_type <- eff_biotype %>%
+  distinct(Ensembl_Gene_ID, .keep_all = TRUE)
+
+uniq_eff_type
+
+```
+
+## Separate and reshape the datasets for meta data and splicing efficiency matrix
+
+```{r}
+meta_spl <- uniq_eff_type %>% 
+  select(Ensembl_Gene_ID, Biotype_New)
+
+matrix_spl <- uniq_eff_type %>% 
+  select(-Biotype_New)
+matrix_spl <- data.frame(t(matrix_spl))
+colnames(matrix_spl) <- matrix_spl[1, ]
+matrix_spl <- matrix_spl[-1, ]
+matrix_spl
+  
+matrix_spl[names(matrix_spl)] <- lapply(matrix_spl[names(matrix_spl)], function(x) {
+  if (is.factor(x)) {
+    x <- as.character(x)
+  }
+  as.numeric(x)
+  x[is.nan(x)] <- NA  # Replace NaN with NA
+  return(x)
+})
+
+meta_spl
+matrix_spl 
+```
+
+## Scatterplots
+
+```{r}
+# Reshape data from wide to long format for ggplot
+df_long <- uniq_eff_type %>%
+  mutate(Ensembl_Gene_ID = rownames(uniq_eff_type)) %>%
+  mutate(across(starts_with("spl_eff_mean"), ~ ifelse(!is.na(.), log(. / (1 - .))))) %>%
+  gather(key = "tissue", value = "splicing_efficiency",  spl_eff_mean1:spl_eff_mean22, -Ensembl_Gene_ID, -Biotype_New)
+
+df_long
+
+# Filter out NaN values in splicing_efficiency before plotting
+df_long_clean <- df_long %>%
+  mutate(splicing_efficiency = as.numeric(splicing_efficiency)) %>%  # Convert to numeric
+  filter(!is.na(splicing_efficiency))  # Remove rows with NaN in splicing_efficiency
+
+medians <- df_long_clean %>%
+  group_by(tissue, Biotype_New) %>%
+  summarize(median_splicing_efficiency = median(splicing_efficiency))
+
+# Create a character vector of the column names (or corresponding tissue names)
+tissue_order <- c("spl_eff_mean1", "spl_eff_mean2", "spl_eff_mean3", "spl_eff_mean4", 
+                  "spl_eff_mean5", "spl_eff_mean6", "spl_eff_mean7", "spl_eff_mean8", 
+                  "spl_eff_mean9", "spl_eff_mean10", "spl_eff_mean11", "spl_eff_mean12", 
+                  "spl_eff_mean13", "spl_eff_mean14", "spl_eff_mean15", "spl_eff_mean16", 
+                  "spl_eff_mean17", "spl_eff_mean18", "spl_eff_mean19", "spl_eff_mean20", 
+                  "spl_eff_mean21", "spl_eff_mean22")
+
+# Reverse the order of the tissue levels
+tissue_order_reversed <- rev(tissue_order)
+
+# Ensure tissue factor levels follow the reversed original column order
+df_long_clean$tissue <- factor(df_long_clean$tissue, levels = tissue_order_reversed)
+medians$tissue <- factor(medians$tissue, levels = tissue_order_reversed)
+```
+
+
+```{r}
+# Plot with data points and medians (main plot)
+ggplot(df_long_clean, aes(x = splicing_efficiency, y = tissue, color = Biotype_New)) +
+  geom_point(alpha = 0.7) + 
+  geom_point(data = medians, aes(x = median_splicing_efficiency, y = tissue, color = Biotype_New), 
+             shape = 18, size = 4) +  # Add rhomboid for each biotype's median
+  labs(title = "Gene Splicing Efficiency Across Tissues",
+       x = "Splicing Efficiency",
+       y = "Tissue") +
+  theme(axis.text.y = element_text(angle = 0, hjust = 1)) +  # Ensure labels are readable
+  scale_color_manual(values = c("protein_coding" = "blue", 
+                                "lncRNA" = "red", 
+                                "other" = "green")) +
+  scale_x_continuous(breaks = seq(0, 1, by = 0.1),  # Custom breaks
+                     limits = c(0, 1))  # Optional: Extend x-axis limits to 0 and 1
+
+# Plot with only medians
+ggplot(medians, aes(x = median_splicing_efficiency, y = tissue, color = Biotype_New)) +
+  geom_point(shape = 18, size = 4) +  # Add rhomboids for each biotype's median
+  labs(title = "Median Gene Splicing Efficiency Across Tissues by Biotype",
+       x = "Median Splicing Efficiency",
+       y = "Tissue") +
+  theme(axis.text.y = element_text(angle = 0, hjust = 1)) +  # Ensure labels are readable
+  scale_color_manual(values = c("protein_coding" = "blue", 
+                                "lncRNA" = "red", 
+                                "other" = "green")) +
+  scale_x_continuous(breaks = seq(0, 1, by = 0.1),  # Custom breaks
+                     limits = c(0, 1))  # Optional: Extend x-axis limits to 0 and 1
+```
+
+```{r}
+library(ggplot2)
+library(gridExtra)
+
+
+# Optionally, print all plots to a single PDF file
+pdf("/Users/sherrywang/Desktop/Research/Calabrese/Splicing_Efficiency_by_Tissue.pdf", width = 10, height = 8)
+
+# Loop through each tissue and create a separate plot
+for (tissue in unique(df_long_clean$tissue)) {
+  df_subset <- df_long_clean[df_long_clean$tissue == tissue, ]
+  
+  p <- ggplot(df_subset, aes(x = splicing_efficiency, fill = Biotype_New)) +
+    geom_histogram(binwidth = 0.05, alpha = 0.7, position = "identity") +
+    labs(title = paste("Distribution of Splicing Efficiency in", tissue),
+         x = "Splicing Efficiency",
+         y = "Count") +
+    scale_fill_manual(values = c("protein_coding" = "blue", 
+                                 "lncRNA" = "red", 
+                                 "other" = "green")) +
+    theme_bw() +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1),
+          plot.margin = unit(c(1,1,1,1), "cm")) # Adjust margin as needed
+  
+  print(p) # Print each plot to the PDF
+}
+
+dev.off()
+# This will create a separate plot for each tissue and save all plots in a PDF
+
+```
+
+```{r}
+ggplot(df_long_clean, aes(x = splicing_efficiency, fill = Biotype_New)) +
+  geom_histogram(binwidth = 0.05, alpha = 0.7, position = "identity") +  # You can adjust binwidth as needed
+  facet_wrap(~ tissue, ncol = 4) +  # Create one histogram per tissue, arranged in a grid
+  labs(title = "Distribution of Splicing Efficiency Across Tissues",
+       x = "Splicing Efficiency",
+       y = "Count") +
+  scale_fill_manual(values = c("protein_coding" = "blue", 
+                               "lncRNA" = "red", 
+                               "other" = "green")) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+```
+
+## Appendix
+
+
+```{r}
+# Load DESeq2 library
+library(DESeq2)
+
+# Assuming 'countData' is your matrix of gene expression counts
+# 'colData' is your sample information data frame with 3 conditions (factor1, factor2, factor3)
+# 'spl_eff_mean1' to 'spl_eff_mean22' are part of your count matrix
+
+# Assuming 'colData' contains the relevant design variables (factor1, factor2, factor3)
+# Loop over each 'spl_eff_mean' column for DESeq2 analysis
+results_list <- list()
+
+for (i in 1:22) {
+  # Dynamically create column names
+  spl_eff_col <- paste0("spl_eff_mean", i)
+  
+  # Subset the relevant count data (assuming the columns are genes and rows are samples)
+  countData_subset <- matrix_spl[, spl_eff_col, drop = FALSE]  # Ensure it's a matrix
+  
+  # Create DESeq2 dataset
+  dds <- DESeqDataSetFromMatrix(countData = countData_subset,
+                                colData = colData,
+                                design = ~ factor1 + factor2 + factor3)  # Three-way design
+  
+  # Run DESeq2
+  dds <- DESeq(dds)
+  
+  # Store results in a list
+  res <- results(dds)
+  results_list[[spl_eff_col]] <- res
+}
+
+# Access results for each column, e.g., for spl_eff_mean1:
+res_spl_eff_mean1 <- results_list[["spl_eff_mean1"]]
+
+```
