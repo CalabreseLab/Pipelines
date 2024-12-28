@@ -1,0 +1,282 @@
+---
+title: "Splicing Efficiency with Replicates"
+author: "Sherry"
+date: "2024-10-07"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(DESeq2)
+```
+
+#### Import Dataset
+
+```{r Dataset}
+spl <- read.delim("/Users/sherrywang/Desktop/Research/Calabrese/RNAseq_data/Infiled/24_06_27_fil_by_grp.tsv", sep = "\t", header = T)
+spl <- spl[order(spl$Ensembl_Gene_ID),]
+spl$Ensembl_Gene_ID <- sub("\\..*", "", spl$Ensembl_Gene_ID)
+spl[which(spl$Ensembl_Gene_ID == "ENSMUSG00000007836"),]
+
+spl
+```
+
+#### Calculate Splicing Efficiency
+
+```{r Splicing Efficiency}
+spl_eff <- spl %>%
+  group_by(Ensembl_Gene_ID) %>%
+  summarise(across(ends_with("tpm"), 
+                   ~ sprintf("%.6f", 
+                             sum(. * (Splicing == "Spliced")) / 
+                             (sum(. * (Splicing == "Spliced")) + 
+                              sum(. * (Splicing == "Unspliced")))),
+                   .names = "spl_eff_{col}"))
+
+spl_eff$Ensembl_Gene_ID <- sub("\\..*", "", spl_eff$Ensembl_Gene_ID)
+
+spl_eff <- spl_eff %>%
+  mutate(across(ends_with("tpm"), as.numeric)) %>%
+  mutate_all(~replace(.,.=="NaN", NA))
+
+spl_eff
+
+# write.table(spl_eff, "/Users/sherrywang/Desktop/Research/Calabrese/RNAseq_data/Infiled/24_10_18_Ori_Spl_Eff.tsv", sep = "\t", row.names = F)
+```
+
+#### Process NAs
+
+```{r}
+process_NAs <- function(df) {
+  group_size <- 4
+  n_groups <- (ncol(df) - 1) / group_size  # Adjust for the first column (non-numeric)
+  
+  # Retain the first column (observation names) and work with the rest of the data
+  first_col <- df[, 1, drop = FALSE]
+  data <- df[, -1]  # Exclude the first column for calculations
+  
+  # Modify the rows and keep the modified ones
+  data_modified <- t(apply(data, 1, function(row) {
+    for (i in 1:n_groups) {
+      # Get the columns for the current group
+      group_columns <- ((i - 1) * group_size + 1):(i * group_size)
+      group_values <- row[group_columns]
+      
+      # Count the number of NAs in the group
+      num_NA <- sum(is.na(group_values))
+      
+      # If the group has 1 or 2 NAs, replace them with the mean of non-missing values
+      if (num_NA > 0 && num_NA <= 2) {
+        group_mean <- mean(group_values, na.rm = TRUE)
+        row[group_columns][is.na(row[group_columns])] <- group_mean
+      } else if (num_NA >= 3) {
+        # If the group has more than 3 NAs, return a row of NAs to be excluded later
+        return(rep(NA, length(row)))
+      }
+    }
+    return(row)  # Return the modified row
+  }))
+  
+  # Filter out rows with NA (i.e., rows excluded based on your criteria)
+  data_cleaned <- data_modified[complete.cases(data_modified), ]
+  
+  # Reattach the first column (observation names) to the cleaned data frame
+  df_cleaned <- cbind(first_col[complete.cases(data_modified), , drop = FALSE], data_cleaned)
+  
+  # Set the column names to match the original dataframe
+  colnames(df_cleaned) <- colnames(df)
+
+  return(df_cleaned)
+}
+
+# Apply the function to your data frame
+spl_eff_cl <- process_NAs(spl_eff)
+spl_eff_cl
+
+spl_eff_rnd <- round(spl_eff_cl[, 2:89], digits = 2) * 100
+
+rownames(spl_eff_rnd) <- spl_eff_cl[, 1]
+
+spl_eff_rnd <- spl_eff_rnd %>%
+  mutate_all(as.integer)
+
+write.table(spl_eff_cl, "/Users/sherrywang/Desktop/Research/Calabrese/RNAseq_data/Infiled/24_10_18_Ori_Spl_Eff_No_Missing.tsv", sep = "\t", row.names = F)
+```
+
+```{r}
+spl_eff_rnd[896,] # There are rows with all 0s, 
+```
+
+
+#### DESeq2
+
+```{r}
+mdata <- data.frame(colnames(spl_eff_rnd))
+mdata <- data.frame(mdata[1:88, ])
+mdata$Tissue <- as.factor(rep(1:22, each = 4))
+colnames(mdata) <- c("Sample", "Tissue")
+
+
+spl_eff_rnd
+mdata
+
+dds <- DESeqDataSetFromMatrix(countData = spl_eff_rnd[],
+                              colData = mdata,
+                              design = ~ Tissue)
+dds <- DESeq(dds)
+
+# Extract the results
+res21 <- results(dds, contrast = c("Tissue", "2", "1"))
+res31 <- results(dds, contrast = c("Tissue", "3", "1"))
+
+
+res_table21 <- as.data.frame(res21)
+res_table31 <- as.data.frame(res31)
+
+
+res_table21 
+res_table31
+```
+
+```{r}
+library(ggplot2)
+
+# Add a column to categorize the genes as significantly differentially expressed or not
+res_table21$significance <- ifelse(res_table21$padj < 0.05 & abs(res_table21$log2FoldChange) > 1, "Significant", "Not Significant")
+
+# Create a volcano plot using ggplot2
+ggplot(res_table21, aes(x = log2FoldChange, y = -log10(pvalue), color = significance)) +
+  geom_point(alpha = 0.5) +
+  scale_color_manual(values = c("gray", "red")) +  # Color significant genes in red
+  theme_minimal() +
+  labs(title = "Volcano Plot",
+       x = "Log2 Fold Change",
+       y = "-Log10 p-value") +
+  theme(legend.position = "top")
+```
+
+
+
+
+### Appendix
+
+#### Calculate min value except for 0 and use 1/10 of min value as Null to mutate the 0s and 1s (Not Using).
+
+```{r Null Value}
+min_mutate <- spl_eff %>%
+  mutate_all(~replace(., . == 0, NA)) %>%
+  mutate_all(~replace(., . == "NaN", NA))
+
+min_values <- min_mutate %>%
+  summarise(across(ends_with("tpm"), \(x) min(x, na.rm = TRUE)))
+
+NullVal <- min(min_values)/10
+```
+
+```{r}
+spl_eff_null <- spl_eff %>%
+  mutate(across(ends_with("tpm"), ~ ifelse(. == 0, . + NullVal, .))) %>%
+  mutate(across(ends_with("tpm"), ~ ifelse(. == 1, . - NullVal, .)))
+   
+spl_eff_null
+```
+
+#### Logit transformation (Not Using)
+
+```{r }
+spl_eff_logit <- spl_eff_null %>%
+  mutate(across(ends_with("tpm"), ~ ifelse(!is.na(.), log(. / (1 - .)) * 100000000, NA))) %>%
+  mutate(across(ends_with("tpm"), as.integer))
+
+spl_eff_logit
+```
+#### Visualization 
+
+```{r}
+ID_Biotype <- spl %>% 
+  select(Ensembl_Gene_ID, Biotype)
+
+ID_Biotype
+
+diff_type <- spl %>% 
+  group_by(Ensembl_Gene_ID) %>%
+  filter(n_distinct(Biotype) > 1) %>%
+  ungroup()
+
+diff_type
+
+eff_biotype <- left_join(ID_Biotype, spl_eff_logit, by="Ensembl_Gene_ID")
+
+eff_biotype <- eff_biotype %>%
+  group_by(Ensembl_Gene_ID) %>%
+  mutate(Biotype_New = case_when(
+    any(Biotype == "protein_coding") ~ "protein_coding",
+    any(Biotype == "lncRNA") ~ "lncRNA",
+    TRUE ~ "other"
+  )) %>%
+  select(-Biotype) %>%
+  ungroup()
+
+uniq_eff_type <- eff_biotype %>%
+  distinct(Ensembl_Gene_ID, .keep_all = TRUE)
+
+uniq_eff_type
+```
+```{r}
+# Reshape data from wide to long format for ggplot
+df_long <- uniq_eff_type %>%
+  mutate(Ensembl_Gene_ID = rownames(uniq_eff_type)) %>%
+  gather(key = "Tissue", value = "Splicing_efficiency",  spl_eff_SRR3085918_tpm:spl_eff_SRR3086005_tpm, -Ensembl_Gene_ID, -Biotype_New)
+
+df_long
+
+# Filter out NaN values in splicing_efficiency before plotting
+df_long_clean <- df_long %>%
+  filter(!is.na(Splicing_efficiency))  # Remove rows with NaN in splicing_efficiency
+
+medians <- df_long_clean %>%
+  group_by(Tissue, Biotype_New) %>%
+  summarize(Median_splicing_efficiency = median(Splicing_efficiency))
+
+# Create a character vector of the column names (or corresponding tissue names)
+tissue_order <- colnames(uniq_eff_type[, 2:89])
+
+# Reverse the order of the tissue levels
+tissue_order_reversed <- rev(tissue_order)
+
+# Ensure tissue factor levels follow the reversed original column order
+df_long_clean$Tissue <- factor(df_long_clean$Tissue, levels = tissue_order_reversed)
+```
+
+#### Distribution
+
+```{r}
+library(ggplot2)
+library(gridExtra)
+
+# Optionally, print all plots to a single PDF file
+pdf("/Users/sherrywang/Desktop/Research/Calabrese/Splicing_Efficiency_by_Tissue.pdf", width = 10, height = 8)
+# grid.arrange(grobs = plot_list, ncol = 1)
+
+# Loop through each tissue and create a separate plot
+for (Tissue in unique(df_long_clean$Tissue)) {
+  df_subset <- df_long_clean[df_long_clean$Tissue == Tissue, ]
+  
+  p <- ggplot(df_subset, aes(x = Splicing_efficiency, fill = Biotype_New)) +
+    geom_histogram(binwidth = 0.05, alpha = 0.7, position = "identity") +
+    labs(title = paste("Distribution of Splicing Efficiency in", Tissue),
+         x = "Splicing Efficiency",
+         y = "Count") +
+    scale_fill_manual(values = c("protein_coding" = "blue", 
+                                 "lncRNA" = "red", 
+                                 "other" = "green")) +
+    theme_bw() +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1),
+          plot.margin = unit(c(1,1,1,1), "cm")) # Adjust margin as needed
+  
+  print(p) # Print each plot to the PDF
+}
+
+dev.off()
+```
