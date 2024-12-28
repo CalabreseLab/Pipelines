@@ -1,0 +1,47 @@
+---
+title: "FilterLog2"
+author: "Sherry"
+date: "2024-06-12"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(haven)
+library(sas7bdat)
+library(ggplot2)
+library(dplyr)
+```
+
+```{r}
+# Import data
+ana <-read.sas7bdat("/Users/sherrywang/Desktop/Research/Calabrese/RNAseq_data/analysis.sas7bdat", debug=TRUE)
+```
+
+```{r}
+# Filter out rows with all 0s
+filtered_ana <- ana %>%
+  filter(mean != 0)
+filtered_ana
+
+# Calculate the log2 mean
+log2mean <- log2(filtered_ana$mean)
+tran <- data.frame(log2mean)
+head(tran)
+
+# Plot histogram and add a line indicate our cutoff
+hist(log2mean, breaks = 500)
+abline(v = log2(0.0625), col = "red", lwd = 2, lty = 2)
+```
+
+```{r}
+# Create a new dataframe with only rows having a mean over 0.0625
+above_thre <- data.frame(filtered_ana[which(filtered_ana$mean > 0.0625),])
+l2m <- log2(filtered_ana$mean)
+above_thre$log2mean <- l2m[which(filtered_ana$mean > 0.0625)]
+above_thre
+
+# Output the two files
+write.table(ana, "/Users/sherrywang/Desktop/Research/Calabrese/RNAseq_data/Original_Analysis.tsv", sep = "\t", row.names = F)
+write.table(above_thre, "/Users/sherrywang/Desktop/Research/Calabrese/RNAseq_data/Filtered_Analysis.tsv", sep = "\t", row.names = F)
+```
