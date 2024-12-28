@@ -1,0 +1,21 @@
+---
+title: "SAS_to_TSV"
+author: "Sherry"
+date: "2024-06-13"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(sas7bdat)
+library(DESeq2)
+library(ggplot2)
+library(pheatmap)
+```
+
+
+```{r}
+write.table(read.sas7bdat("/Users/sherrywang/Desktop/Research/Calabrese/RNAseq_data/fil_by_grp.sas7bdat", debug=TRUE), "/Users/sherrywang/Desktop/Research/Calabrese/RNAseq_data/fil_by_grp.tsv", sep = "\t", row.names = F)
+
+write.table(read.sas7bdat("/Users/sherrywang/Desktop/Research/Calabrese/RNAseq_data/grp_mean.sas7bdat", debug=TRUE), "/Users/sherrywang/Desktop/Research/Calabrese/RNAseq_data/fil_by_grp.tsv", sep = "\t", row.names = F)
+```
