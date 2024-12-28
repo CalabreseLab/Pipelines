@@ -1,0 +1,47 @@
+---
+title: "DeSeq2_grp_mean"
+author: "Sherry"
+date: "2024-07-01"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(DESeq2)
+library(dplyr)
+library(EnhancedVolcano)
+library(randomForest)
+```
+
+## Import dataset
+
+```{r}
+grp <- read.delim("/Users/sherrywang/Desktop/Research/Calabrese/RNAseq_data/grp_mean_6_27.tsv", )
+head(grp, 50)
+```
+
+```{r}
+```
+
+
+## Splicing efficiency
+
+```{r se}
+# Reshape the data to calculate splicing efficiency for each tissue
+spl_eff <- grp %>%
+  group_by(Ensembl_Gene_ID) %>%
+  summarise(across(starts_with("mean"), 
+                   ~ sprintf("%.6f", 
+                             sum(. * (Splicing == "Spliced")) / 
+                             (sum(. * (Splicing == "Spliced")) + 
+                              sum(. * (Splicing == "Unspliced")))),
+                   .names = "spl_eff_{col}"))
+
+spl_eff$Ensembl_Gene_ID <- sub("\\..*", "", spl_eff$Ensembl_Gene_ID)
+
+# View the splicing efficiency for each tissue
+print(spl_eff)
+
+#write.table(spl_eff, "/Users/sherrywang/Desktop/Research/Calabrese/RNAseq_data/Splicing_Efficiency_07_01.tsv", sep = "\t", row.names = F)
+
+```
