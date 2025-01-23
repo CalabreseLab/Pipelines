@@ -4,9 +4,8 @@ It performs the following steps:
 1. Loads necessary modules.
 2. Creates a main directory for each SRR number.
 3. Inside each main directory, creates subdirectories for alignments and reports.
-4. Submits SLURM jobs to download fastq files, run STAR alignment and Kallisto alignment, and process BAM files.
+4. Submits SLURM jobs to download fastq files, run STAR alignment, and process BAM files.
 5. Logs output and error messages in the reports directory.
-6. Rename the abundance.tsv file to <SRR number>_abundance.tsv file.
 EOF
 
 #!/bin/bash
@@ -23,13 +22,8 @@ newDir=(
     "reports"
 )
 
-# Create a variable for your directory.
-my_dir="<your directory>"
-STAR_ind="<your directory for STAR index file>"
-Kall_ind="<your directory for Kallisto transcriptome index file>"
-
 # Replace <startnumber> and <endnumber> with actual values
-for i in $(seq <startnumber> <endnumber>)
+for i in $(seq 3085918 3086005)
 do
     # Create main directory and subdirectories
     mkdir -p SRR$i/STAR_alignments
@@ -48,7 +42,7 @@ do
 
     # Move back to STAR_alignments and run STAR after fastq-dump is complete
     cd ..
-    star_job_id=$(sbatch --parsable --dependency=afterok:$fastq_job_id --mem=50g -t 12:00:00 -n 12 -N 1 -o reports/c.out -e reports/c.err --wrap="STAR --runThreadN 12 --genomeDir $STAR_ind --outFileNamePrefix bam_files/SRR$i --readFilesIn fastq/SRR${i}_1.fastq fastq/SRR${i}_2.fastq --outSAMtype BAM SortedByCoordinate")
+    star_job_id=$(sbatch --parsable --dependency=afterok:$fastq_job_id --mem=50g -t 12:00:00 -n 12 -N 1 -o reports/c.out -e reports/c.err --wrap="STAR --runThreadN 12 --genomeDir /users/w/x/wxueyao/Calabrese_Lab/STARv2.7.9a_genome_index_mm39 --outFileNamePrefix bam_files/SRR$i --readFilesIn fastq/SRR${i}_1.fastq fastq/SRR${i}_2.fastq --outSAMtype BAM SortedByCoordinate")
 
     # Move to bam_files and run samtools after STAR is complete
     cd bam_files
@@ -63,14 +57,14 @@ do
 
     # Create the kallisto_quant.sh script
     cat << EOF > kallisto_quant.sh
-    #!/bin/bash
-    #SBATCH -t 24:00:00
-    #SBATCH --mem=100G
-    #SBATCH -n 8
-    
-    module load kallisto/0.46.2
-    kallisto quant -i $Kall_ind -o $my_dir/SRR$i/Kallisto_alignments --rf-stranded $my_dir/SRR$i/STAR_alignments/bam_files/SRR${i}Aligned_R1.fq $my_dir/SRR$i/STAR_alignments/bam_files/SRR${i}Aligned_R2.fq
-    EOF
+#!/bin/bash
+#SBATCH -t 24:00:00
+#SBATCH --mem=100G
+#SBATCH -n 8
+
+module load kallisto/0.46.2
+kallisto quant -i /proj/calabrlb/users/sboyson/Kallisto_annotation/kallisto_transcriptome_vM36_12_4_24.index -o /users/w/x/wxueyao/Calabrese_Lab/New_Annotation/Alignments/SRR$i/Kallisto_alignments --rf-stranded /users/w/x/wxueyao/Calabrese_Lab/New_Annotation/Alignments/SRR$i/STAR_alignments/bam_files/SRR${i}Aligned_R1.fq /users/w/x/wxueyao/Calabrese_Lab/New_Annotation/Alignments/SRR$i/STAR_alignments/bam_files/SRR${i}Aligned_R2.fq
+EOF
 
     # Submit the Kallisto job after the samtools is done
     kallisto_job_id=$(sbatch --parsable --dependency=afterok:$samtools_collate_job_id kallisto_quant.sh)
@@ -78,10 +72,4 @@ do
     # Move back to the main directory
     cd ..
     cd ..
-
-    if mv "$my_dir/SRR${i}/Kallisto_alignments/abundance.tsv" "$my_dir/SRR${i}/Kallisto_alignments/SRR${i}_abundance.tsv"; then
-        echo "File SRR${i}_abundance.tsv is ready to be copied."
-    else
-        echo "Failed to move abundance.tsv for SRR${i}"
-    fi
 done
