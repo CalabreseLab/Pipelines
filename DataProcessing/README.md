@@ -1,16 +1,17 @@
 # STAR-and-Kallisto-instruction
-This pipeline utilized STAR and Kallisto alignment on UNC longleaf. For samples with continuous SRR number, it create a loop to submit all the samples automatically.
+This pipeline utilized STAR and Kallisto alignment on UNC longleaf. For samples with continuous SRR number, it creates a loop to submit them automatically.
 
 ### 1. Automated directory creation, alignment, and renaming. 
 1) Open the Kallisto_Auto.sh file and edit the variables as indicated
 2) Upload the file to your workspace on longleaf
 3) Submit the file with ./Kallisto_Auto.sh
+4) Submit Rename.sh to rename the abundance.tsv files.
 
 ### 2. Automated downloading of the data 
 1) First, set up an SSH key-based authentication to avoid entering passwords every time. Copy the code to your local terminal.
 
           ssh-keygen -t rsa
-        # When asked about passphrase, press enter so that there will be no passphrase and the procedure can be completed automatically.
+        # When asked about passphrase, press enter so there will be no passphrase and the procedure can be completed automatically.
         # Enter your passcode for longleaf.
           ssh-copy-id <your longleaf account>
 
